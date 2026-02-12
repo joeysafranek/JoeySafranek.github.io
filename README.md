@@ -1,2 +1,3 @@
-# joeysafranek
-My engineering portfolio and will be up to date on my project history with screen shots and the code available.  
+# Joey Safranek
+My engineering portfolio will be up to date, with screenshots and code available.  
+[**Smart cheap water sensor**](code/)
