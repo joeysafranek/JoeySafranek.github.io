@@ -21,6 +21,7 @@
     > Dual Credit Sociology 100 
     > Dual Credit English 102 
     > Dual Credit Intro to College
+----
 ## 📽️ Projects
 [**Smart cheap water sensor**](smartWaterSensor/) 1/7/2026 - 2/12/2026
 
@@ -29,7 +30,7 @@
     > Can connect via Bluetooth and send a value that can be read via a Bluetooth reading software (NRF Connect is what I used)
     > Uses Async functions to prevent other code from stopping while the code performs another action 
     > Comments are added for readability and code is purposely made with the intention of being readable
-    
+----
 ## 🔧 Tech Stack
 **Languages & Tools I Use:**
 
