@@ -1,0 +1,192 @@
+# -----------
+# Circuit design and Custom code made by Joey Safranek for State Farm Engineering Project
+# Bluetooth capabilites based on Orginal example by Kevin McAleer. His functions have comments above them
+# Custom code, circuit design, and implementation based on official Raspberry Pi and Arduino documentation
+# Comments are added for readibility
+# ------------
+
+# libraries 
+from picozero import pico_led
+from machine import Pin, ADC, PWM
+import time
+import aioble
+import bluetooth
+import asyncio
+import struct
+from sys import exit
+# Universally Unique Identifier (for bluetooth)
+_SERVICE_UUID = bluetooth.UUID(0x1848)
+_CHARACTERISTIC_UUID = bluetooth.UUID(0x2A6E)
+
+# Diffrent variables for the text sent to your phone
+waterDetected = "Water is Detected!"
+waterNotDetected = "No water is Detected."
+
+# Bluetooth parameters
+BLE_NAME = f"State Farm Project" 
+BLE_SVC_UUID = bluetooth.UUID("4d1502f8-181f-4e07-9ca6-3a5b70505056") #My water sensors UUID-- Change to a diffrent UUID
+BLE_CHARACTERISTIC_UUID = bluetooth.UUID("701134e8-5f16-45b8-8b6a-e421157f998c") #My water sensors UUID-- Change to a diffrent UUID
+BLE_APPEARANCE = 0x0300
+BLE_ADVERTISING_INTERVAL = 2000
+BLE_SCAN_LENGTH = 5000
+BLE_INTERVAL = 30000
+BLE_WINDOW = 30000
+
+# Pins as variables for easy changes
+redLedPin = 15
+greenLedPin = 14
+blueLedPin = 13
+waterSensorPin = 28
+speakerPin = 16
+
+preState = None
+dryWaterSensor = None
+speaker = PWM(speakerPin) # Pulse with modulation, allows me to change freq
+red = Pin(redLedPin, Pin.OUT)
+green = Pin(greenLedPin, Pin.OUT)
+blue = Pin(blueLedPin, Pin.OUT)# defines the LED
+#sets led start to low
+red.low() 
+green.low()
+blue.low()
+# Reads ADC2 or GP28 (ground pin 28)
+waterSensor = ADC(waterSensorPin)
+# takes the average of 3 dry water sensor tests and adds a 3000 threshold to prevent false postives
+
+# Kevin's original example code function with modifications for water
+async def send_data_task(connection, characteristic, water):
+    if water == 1:
+        message = f"{waterDetected}"
+        msg = message.encode('utf-8')
+    if water == 0:
+        message = f"{waterNotDetected}"
+        msg = message.encode('utf-8')
+
+    try:
+        await characteristic.notify(connection, msg)
+        print(f"Sent: {message}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+
+# Kevin's original code function for the run_peripheral_mode() 
+async def run_peripheral_mode():
+
+    # 1. Create service
+    ble_service = aioble.Service(BLE_SVC_UUID)
+
+    # 2. Create characteristic (ATTACHED to service)
+    characteristic = aioble.Characteristic(
+        ble_service,
+        BLE_CHARACTERISTIC_UUID,
+        read=True,
+        notify=True,
+        write=True,
+        capture=True,
+    )
+
+    # 3. Register service
+    aioble.register_services(ble_service)
+
+    print(f"{BLE_NAME} starting to advertise")
+    # cool white light to signal its advertising
+    green.low()
+    blue.high()
+    red.high()
+    # 4. Advertise + wait for connection
+    async with await aioble.advertise(
+        BLE_ADVERTISING_INTERVAL,
+        name=BLE_NAME,
+        services=[BLE_SVC_UUID],
+        appearance=BLE_APPEARANCE,
+    ) as connection: # modified to work with my sensor
+
+        print("Connected")
+        green.low()
+        blue.low()
+        red.low()
+        await monitorWater(connection, characteristic)
+
+        print("Disconnected")
+
+
+
+async def readDryState(): 
+    blue.high()
+    print("Calibrating Dry Value")
+    # following code will take the average of 3 dry values then add a threshold of 1/10 of that value. This is suppose to prevent false postives
+    await asyncio.sleep(2)
+    waterSensorValue1 = readWaterSensor()
+    await asyncio.sleep(2)
+    waterSensorValue2 = readWaterSensor()
+    await asyncio.sleep(2)
+    waterSensorValue3 = readWaterSensor()
+    avgWaterSensor = (waterSensorValue1 + waterSensorValue2 + waterSensorValue3)/3
+    thresholdValue = avgWaterSensor / 10
+    thresholdWaterSensor = avgWaterSensor + thresholdValue
+    print(thresholdWaterSensor)
+    blue.low()
+    green.high()
+    return (thresholdWaterSensor)
+    
+# Reads the water sensor
+def readWaterSensor(): 
+    waterSensorValue = waterSensor.read_u16()
+     #sends the value of the water sensor
+    return waterSensorValue
+# main function to monitor water
+async def monitorWater(connection, characteristic):
+    #declares its using the global varaible and not a new variable 
+    global dryWaterSensor
+    await asyncio.sleep(1)
+    try: # trys to execute the following code
+        while connection.is_connected(): 
+            await asyncio.sleep(2)
+            waterSensorValue = readWaterSensor()
+            #testing purposes
+            print(dryWaterSensor) 
+            print(waterSensorValue)
+            #if the sensor detects water
+            if waterSensorValue >= dryWaterSensor:
+                global preState
+                green.low()
+                red.high()
+                #520 hz frequency
+                speaker.freq(520)
+                # goes to ~60000 for max volumne
+                speaker.duty_u16(60000) 
+                await asyncio.sleep(0.5)
+                # calls the send data function for water detected
+                await send_data_task(connection, characteristic,1)
+            else:  # When there is no water
+                green.high() 
+                red.low()
+                #turns the speaker off
+                speaker.duty_u16(0)
+                # calls the send data function for no Water
+                await send_data_task(connection, characteristic,0)
+    except Exception as e: # if an error occurs, it'll send it in the console
+        print(f"Error: {e}")
+    finally: # if connection is not connected and after error is put in console, it'll execute the following code
+        print("Disconnected-waiting to reconnect.")
+        red.low()
+        green.low()
+        blue.low()
+        speaker.duty_u16()
+    
+        
+
+# Setup function, Idea taken from Kevin's example
+async def blueSetUp():
+    global dryWaterSensor
+    dryWaterSensor = await readDryState()
+    while True:
+        setup = [
+                asyncio.create_task(run_peripheral_mode()),
+            ]
+        await asyncio.gather(*setup)
+        
+
+asyncio.run(blueSetUp())
+
