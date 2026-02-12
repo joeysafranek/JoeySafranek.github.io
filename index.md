@@ -30,7 +30,6 @@
     > Uses Async functions to prevent other code from stopping while the code performs another action 
     > Comments are added for readability and code is purposely made with the intention of being readable
     
-----
 ## 🔧 Tech Stack
 **Languages & Tools I Use:**
 
