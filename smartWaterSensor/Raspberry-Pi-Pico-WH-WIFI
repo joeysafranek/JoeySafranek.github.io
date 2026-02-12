@@ -1,0 +1,149 @@
+# -----------
+# Wifi capabilites are based on research online from other Wi-Fi-based Raspberry Pi projects
+# Custom code, circuit design, and implementation based on official Raspberry Pi and Arduino documentation
+# Comments are added for readability
+# Created by Joey Safranek 2/5/2025 for State Farm Project 
+# ------------
+
+
+
+# libraries 
+from picozero import pico_led
+from machine import Pin, ADC, PWM
+import time
+import aioble
+import bluetooth
+import asyncio
+import struct
+import network
+import urequests
+import json
+from sys import exit
+
+# Pins as variables for easy changes
+redLedPin = 15
+greenLedPin = 14
+blueLedPin = 13
+waterSensorPin = 28
+speakerPin = 16
+# api link from IFTTT--The web server I used to send a post request to a webhook that sends a sms notification 
+from waterSensorSecrets.py import apiWebhook
+# wifi password
+from waterSensorSecrets.py import wifiName, wifiPassword
+wifiAttempts = 5
+timeBetweenAttempts = 1
+#change to how many attempts you want to try
+lastState = 0
+
+# Sets up the circuit 
+dryWaterSensor = None
+speaker = PWM(speakerPin) # Pulse with modulation, allows me to change freq
+red = Pin(redLedPin, Pin.OUT)
+green = Pin(greenLedPin, Pin.OUT)
+blue = Pin(blueLedPin, Pin.OUT)# defines the LED
+#sets led start to low
+red.low() 
+green.low()
+blue.low()
+# Reads ADC2 or GP28 (ground pin 28)
+waterSensor = ADC(waterSensorPin)
+# Reads the dry state
+async def readDryState(): 
+    blue.high()
+    print("Calibrating Dry Value")
+    await asyncio.sleep(2)
+    waterSensorValue1 = readWaterSensor()
+    await asyncio.sleep(2)
+    waterSensorValue2 = readWaterSensor()
+    await asyncio.sleep(2)
+    waterSensorValue3 = readWaterSensor()
+    #Takes the average of the 3 water sensor values 
+    avgWaterSensor = (waterSensorValue1 + waterSensorValue2 + waterSensorValue3)/3
+    thresholdValue = avgWaterSensor / 10
+    # Adds a threshold to prevent false positives 
+    thresholdWaterSensor = avgWaterSensor + thresholdValue
+    print(thresholdWaterSensor)
+    blue.low()
+    green.high()
+    # The function would be called on, so it will return the dry-water-sensor threshold value to the main function
+    return (thresholdWaterSensor)
+    
+# Reads the water sensor
+def readWaterSensor(): 
+    waterSensorValue = waterSensor.read_u16()
+     #sends the value of the water sensor
+    return waterSensorValue
+
+# Main function to monitor the water
+async def monitorWater():
+    global dryWaterSensor
+    await asyncio.sleep(1)
+    while True: # Will run forever 
+        await asyncio.sleep(2)
+        waterSensorValue = readWaterSensor()
+        #testing purposes
+        print(dryWaterSensor) 
+        print(waterSensorValue)
+        #if the sensor detects water
+        blue.low()
+        if waterSensorValue >= dryWaterSensor: 
+            green.low()
+            red.high()
+            #520 hz frequency
+            speaker.freq(520)
+            # goes to ~60000 for the max volume
+            speaker.duty_u16(60000) 
+            await asyncio.sleep(0.5)
+            #declares we are using the global value
+            global apiWebhook
+            
+            if waterSensorValue >= dryWaterSensor and lastState == 0:
+                global lastState
+                urequests.post(apiWebhook)
+                print("Sending iMessage")
+                lastState = 1
+        else:
+            global lastState
+            green.high() 
+            red.low()
+            #turns the speaker off
+            speaker.duty_u16(0)
+            lastState = 0
+async def main():
+    # use the global value of these variables
+    global dryWaterSensor
+    global wifiName
+    global wifiPassword
+    
+    dryWaterSensor = await readDryState()
+    print("Dry value calculated")
+    await wifiConnection(wifiName, wifiPassword)
+    # monitor water never sends a value back, so runs until connection fails
+    await monitorWater()
+    
+# researched examples online and created the following function for the wifi connection
+async def wifiConnection(name, password):
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    wlan.connect(name, password)
+    green.low()
+    red.high()
+    blue.high()
+    global wifiAttempts
+    while wifiAttempts > 0:
+        if wlan.status() < 0 or wlan.status() >= 3:
+            break
+        print('trying to connect')
+        await asyncio.sleep(2)
+        wifiAttempts -= 1
+    
+    if wlan.status() != 3:
+        red.high()
+        speaker.duty_u16(40000) 
+        raise RuntimeError('network connection failed')
+    else:
+        status = wlan.ifconfig()
+        print('connected')
+        return wlan
+
+asyncio.run(main())
