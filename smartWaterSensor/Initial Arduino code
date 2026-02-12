@@ -1,0 +1,43 @@
+// I added comments to this code to make it as readable as possible :P
+// These are the pin variables, we will probably change them when we switch to raspberry pi
+int ledPin = 9; 
+int speakerPin = 12;
+int waterSensorPin = 10;
+char waterSensorAnalog = A5;
+// setup is what runs on setup and it only runs once
+void setup()
+{
+   Serial.begin(9600);// begins the serial monitor, used for testing parts
+  pinMode(waterSensorPin, OUTPUT); // sets water sensor pin to a output
+  digitalWrite(waterSensorPin, HIGH); // gives power to the waterSensorPin
+  pinMode(speakerPin, OUTPUT); // defines the speaker 
+  pinMode(ledPin, OUTPUT); // defines the led
+  digitalWrite(ledPin, LOW);
+}
+
+void loop()
+{
+  int sensorData = readSensor(); // reads the sensor in a function so this section isn't full of random code
+  delay(100);
+  Serial.println(sensorData); // prints information in serial monitor
+  //Serial.println("Delay"); // just to see the changes in numbers clearer 
+  if (sensorData >= 700){ // meaning the water sensor is detecting water
+  tone(speakerPin, 520); // the 520 is frequency and from my research is the best frequency to prevent hearing loss.
+  delay(500); // has the frequency run for 500ms or half a second
+  noTone(speakerPin); // turns off frequency 
+  delay(300); // delays before looping again
+  digitalWrite(ledPin, HIGH); // sets led pin to on
+  delay(2000);
+}else{ 
+  digitalWrite(ledPin, LOW);
+  noTone(speakerPin);
+}
+  
+}
+// I used this to make the code look better and be more readable, all it does is read the water sensor to see if there is water
+int readSensor(){ 
+  int sensorData = analogRead(waterSensorAnalog);
+  return sensorData;
+  
+}
+  
